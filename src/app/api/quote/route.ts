@@ -39,7 +39,18 @@ export async function POST(request: Request) {
     .select("id, project_code")
     .single();
 
-  if (error || !project) return NextResponse.json({ error: "Unable to create the project. Please try again." }, { status: 500 });
+   if (error || !project) {
+  console.error("QUOTE_PROJECT_INSERT_ERROR", {
+    error,
+    project,
+    values,
+  });
+
+  return NextResponse.json(
+    { error: "Unable to create the project. Please try again." },
+    { status: 500 }
+  );
+}
 
   const files = body.getAll("files").filter((item): item is File => item instanceof File && item.size > 0);
   for (const file of files) {
