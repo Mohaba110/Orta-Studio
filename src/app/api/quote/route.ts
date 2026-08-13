@@ -2,7 +2,48 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { isDemoMode } from "@/lib/runtime-mode";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+async function sendOrtaNotification(projectId: string, values: Record<string, string>, body: FormData) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const to = process.env.ORTA_NOTIFICATION_EMAIL;
 
+  if (!apiKey || !to) return;
+
+  const company = String(body.get("company") ?? "").trim();
+  const whatsapp = String(body.get("whatsapp") ?? "").trim();
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "User-Agent": "ORTA-Studio/1.0",
+    },
+    body: JSON.stringify({
+      from: "ORTA Studio <onboarding@resend.dev>",
+      to: [to],
+      subject: `New ORTA Project — ${projectId}`,
+      html: `
+        <h2>New ORTA Studio Project</h2>
+        <p><strong>Project ID:</strong> ${projectId}</p>
+        <p><strong>Name:</strong> ${values.name}</p>
+        <p><strong>Company:</strong> ${company || "-"}</p>
+        <p><strong>Email:</strong> ${values.email}</p>
+        <p><strong>WhatsApp:</strong> ${whatsapp || "-"}</p>
+        <p><strong>Country:</strong> ${values.country}</p>
+        <p><strong>Language:</strong> ${values.preferredLanguage}</p>
+        <p><strong>Service:</strong> ${values.service}</p>
+        <p><strong>Industry:</strong> ${values.industry}</p>
+        <p><strong>Product:</strong> ${values.productName}</p>
+        <p><strong>Delivery:</strong> ${values.preferredDelivery}</p>
+        <p><strong>Description:</strong><br>${values.description}</p>
+      `,
+    }),
+  });
+
+  if (!response.ok) {
+    console.error("RESEND_NOTIFICATION_ERROR", await response.text());
+  }
+}
 const requiredFields = ["name", "email", "country", "preferredLanguage", "service", "industry", "productName", "description", "preferredDelivery"] as const;
 
 export async function POST(request: Request) {
@@ -45,7 +86,9 @@ export async function POST(request: Request) {
     project,
     values,
   });
-
+await sendOrtaNotification(project.project_code, values, body).catch((error) => {
+  console.error("RESEND_NOTIFICATION_EXCEPTION", error);
+});
   return NextResponse.json(
     { error: "Unable to create the project. Please try again." },
     { status: 500 }
