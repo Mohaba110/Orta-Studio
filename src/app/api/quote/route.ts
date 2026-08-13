@@ -5,8 +5,18 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 async function sendOrtaNotification(projectId: string, values: Record<string, string>, body: FormData) {
   const apiKey = process.env.RESEND_API_KEY;
   const to = process.env.ORTA_NOTIFICATION_EMAIL;
+console.log("ORTA_EMAIL_CONFIG", {
+  hasApiKey: Boolean(apiKey),
+  hasRecipient: Boolean(to),
+});
 
-  if (!apiKey || !to) return;
+  if (!apiKey || !to) {
+  console.error("ORTA_EMAIL_CONFIG_MISSING", {
+    hasApiKey: Boolean(apiKey),
+    hasRecipient: Boolean(to),
+  });
+  return;
+}
 
   const company = String(body.get("company") ?? "").trim();
   const whatsapp = String(body.get("whatsapp") ?? "").trim();
