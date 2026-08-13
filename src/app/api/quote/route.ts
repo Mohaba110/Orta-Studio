@@ -86,9 +86,7 @@ export async function POST(request: Request) {
     project,
     values,
   });
-await sendOrtaNotification(project.project_code, values, body).catch((error) => {
-  console.error("RESEND_NOTIFICATION_EXCEPTION", error);
-});
+
   return NextResponse.json(
     { error: "Unable to create the project. Please try again." },
     { status: 500 }
@@ -110,6 +108,8 @@ await sendOrtaNotification(project.project_code, values, body).catch((error) => 
     template: "project_request_confirmation",
     payload: { token: secureToken, projectId: project.project_code, locale: values.preferredLanguage },
   });
-
+await sendOrtaNotification(project.project_code, values, body).catch((error) => {
+  console.error("RESEND_NOTIFICATION_EXCEPTION", error);
+});
   return NextResponse.json({ projectId: project.project_code, securePath: `/project/${secureToken}` });
 }
