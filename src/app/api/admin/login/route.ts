@@ -59,7 +59,21 @@ export async function POST(request: NextRequest) {
     return respond({ error: "Invalid credentials" }, 401);
   }
 
-  const { data: admin } = await supabase.from("admin_users").select("user_id").eq("user_id", data.user.id).maybeSingle();
+  const { data: admin, error: adminError } = await supabase
+    .from("admin_users")
+    .select("user_id")
+    .eq("user_id", data.user.id)
+    .maybeSingle();
+
+  console.log("ORTA_ADMIN_AUTH_DIAG", {
+    userId: data.user.id,
+    adminFound: Boolean(admin),
+    adminError: adminError
+      ? { code: adminError.code, message: adminError.message }
+      : null,
+    supabaseProjectRef: new URL(url).hostname.split(".")[0],
+  });
+
   if (!admin) {
     await supabase.auth.signOut();
     return respond({ error: "Unauthorized" }, 403);
