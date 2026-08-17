@@ -108,7 +108,33 @@ export async function POST(request: Request) {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
     const storagePath = `${project.id}/client/${randomUUID()}-${safeName}`;
     const { error: uploadError } = await supabase.storage.from("project-files").upload(storagePath, file, { upsert: false });
-    if (!uploadError) await supabase.from("project_files").insert({ project_id: project.id, storage_path: storagePath, original_name: file.name, mime_type: file.type || null, size_bytes: file.size, uploaded_by: "client" });
+    if (uploadError) {
+      console.error("QUOTE_FILE_UPLOAD_ERROR", {
+        projectCode: project.project_code,
+        fileName: file.name,
+        fileSize: file.size,
+        storagePath,
+        error: uploadError,
+      });
+      continue;
+    }
+
+    const { error: fileInsertError } = await supabase.from("project_files").insert({
+      project_id: project.id,
+      storage_path: storagePath,
+      original_name: file.name,
+      mime_type: file.type || null,
+      size_bytes: file.size,
+      uploaded_by: "client",
+    });
+    if (fileInsertError) {
+      console.error("QUOTE_FILE_RECORD_ERROR", {
+        projectCode: project.project_code,
+        fileName: file.name,
+        storagePath,
+        error: fileInsertError,
+      });
+    }
   }
 
   await supabase.from("notification_outbox").insert({
