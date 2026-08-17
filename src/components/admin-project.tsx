@@ -10,7 +10,7 @@ export type AdminProjectData = {
   id: string; code: string; product: string; company: string; client: string; email: string; whatsapp: string; country: string;
   service: string; industry: string; preferredLanguage: string; preferredDelivery: string; description: string; status: ProjectStatus;
   messages: { id: string; date: string; time: string; author: string; text: string }[];
-  files: { id: string; name: string; date: string; meta: string }[];
+  files: { id: string; name: string; date: string; meta: string; downloadUrl?: string | null }[];
   hasOpenRevision: boolean;
 };
 
@@ -77,7 +77,7 @@ export function AdminProject({ initialProject }: { initialProject: AdminProjectD
           </section>
           <section className="detail-section">
             <h2>{pick("Files", "Dosyalar")}</h2>
-            <ul className="file-list">{project.files.map((file) => <li className="file-row" key={file.id}><span>{file.name}</span><span>{file.date}</span><span>{file.meta}</span></li>)}</ul>
+            <ul className="file-list">{project.files.map((file) => <li className="file-row" key={file.id}><span>{file.downloadUrl ? <a href={file.downloadUrl}>{file.name}</a> : file.name}</span><span>{file.date}</span><span>{file.meta}</span></li>)}</ul>
             <input ref={fileInput} hidden multiple type="file" onChange={(e) => uploadFiles(e.target.files)} />
             <button className="button" type="button" style={{ marginTop: 14 }} onClick={() => fileInput.current?.click()}><UploadSimple size={18} />{pick("Upload File", "Dosya Yükle")}</button>
           </section>
