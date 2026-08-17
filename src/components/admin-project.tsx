@@ -33,10 +33,14 @@ export function AdminProject({ initialProject }: { initialProject: AdminProjectD
     if (!text) return;
     const response = await fetch(`/api/admin/projects/${project.code.toLowerCase()}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "message", text }) });
     if (!response.ok) return setNotice(pick("Message could not be sent.", "Mesaj gönderilemedi."));
+    const payload = await response.json().catch(() => ({}));
     const now = new Date();
     const localId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `local-${Date.now()}`;
     setProject({ ...project, messages: [...project.messages, { id: localId, date: now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), time: now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }), author: "ORTA Studio", text }] });
     setMessage("");
+    setNotice(payload.notificationSent === false
+      ? pick("Message saved, but the customer email notification could not be sent.", "Mesaj kaydedildi ancak müşteri e-posta bildirimi gönderilemedi.")
+      : pick("Message sent and customer notified by email.", "Mesaj gönderildi ve müşteri e-posta ile bilgilendirildi."));
   }
 
   async function uploadFiles(files: FileList | null) {
