@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-context";
 import { demoProject, statusOrder, type ProjectStatus } from "@/lib/demo-data";
@@ -24,6 +24,143 @@ function demoAdminProject() {
     files: demoProject.files,
     hasOpenRevision: false,
   };
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[char] ?? char);
+}
+
+function tokenFromPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return null;
+  const token = (payload as Record<string, unknown>).token;
+  return typeof token === "string" && token.length >= 32 ? token : null;
+}
+
+type AdminMessageProject = {
+  id: string;
+  email: string;
+  project_code: string;
+  preferred_language: string;
+  product_name: string;
+};
+
+async function getPermanentProjectToken(project: AdminMessageProject) {
+  const admin = getSupabaseAdmin();
+  if (!admin) return null;
+
+  const { data: rows, error: lookupError } = await admin
+    .from("notification_outbox")
+    .select("payload")
+    .eq("project_id", project.id)
+    .in("template", ["project_request_confirmation", "project_permanent_access"])
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (lookupError) {
+    console.error("ADMIN_PROJECT_TOKEN_LOOKUP_ERROR", {
+      projectCode: project.project_code,
+      error: lookupError,
+    });
+  }
+
+  for (const row of rows ?? []) {
+    const token = tokenFromPayload(row.payload);
+    if (token) return token;
+  }
+
+  const token = randomBytes(32).toString("base64url");
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const { error: updateError } = await admin
+    .from("projects")
+    .update({ access_token_hash: tokenHash })
+    .eq("id", project.id);
+
+  if (updateError) {
+    console.error("ADMIN_PROJECT_TOKEN_UPDATE_ERROR", {
+      projectCode: project.project_code,
+      error: updateError,
+    });
+    return null;
+  }
+
+  const { error: storeError } = await admin.from("notification_outbox").insert({
+    project_id: project.id,
+    channel: "email",
+    recipient: project.email,
+    template: "project_permanent_access",
+    payload: {
+      token,
+      projectId: project.project_code,
+      locale: project.preferred_language,
+    },
+  });
+
+  if (storeError) {
+    console.error("ADMIN_PROJECT_TOKEN_STORE_ERROR", {
+      projectCode: project.project_code,
+      error: storeError,
+    });
+  }
+
+  return token;
+}
+
+async function sendAdminMessageEmail(request: Request, project: AdminMessageProject, text: string) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.error("ADMIN_MESSAGE_EMAIL_CONFIG_MISSING", { hasApiKey: false });
+    return false;
+  }
+
+  const token = await getPermanentProjectToken(project);
+  if (!token) return false;
+
+  const origin = new URL(request.url).origin;
+  const projectUrl = `${origin}/project/${encodeURIComponent(token)}`;
+  const isTurkish = project.preferred_language === "Türkçe";
+  const subject = isTurkish
+    ? `ORTA Studio'dan yeni mesaj — ${project.project_code}`
+    : `New message from ORTA Studio — ${project.project_code}`;
+  const heading = isTurkish ? "ORTA Studio'dan yeni bir mesajınız var" : "You have a new message from ORTA Studio";
+  const button = isTurkish ? "Projeyi Aç" : "Open Project";
+  const safeMessage = escapeHtml(text).replace(/\n/g, "<br>");
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "User-Agent": "ORTA-Studio/1.0",
+    },
+    body: JSON.stringify({
+      from: "ORTA Studio <onboarding@resend.dev>",
+      to: [project.email],
+      subject,
+      html: `
+        <h2>${heading}</h2>
+        <p><strong>${escapeHtml(project.project_code)}</strong></p>
+        <p>${safeMessage}</p>
+        <p><a href="${escapeHtml(projectUrl)}">${button}</a></p>
+      `,
+    }),
+  });
+
+  if (!response.ok) {
+    console.error("ADMIN_MESSAGE_EMAIL_ERROR", {
+      projectCode: project.project_code,
+      status: response.status,
+      response: await response.text(),
+    });
+    return false;
+  }
+
+  return true;
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ code: string }> }) {
@@ -94,7 +231,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ cod
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (auth.demo) return NextResponse.json({ ok: true, mode: "demo" });
   const { code } = await params;
-  const { data: project } = await auth.supabase!.from("projects").select("id").eq("project_code", code.toUpperCase()).maybeSingle();
+  const { data: project } = await auth.supabase!
+    .from("projects")
+    .select("id,email,project_code,preferred_language,product_name")
+    .eq("project_code", code.toUpperCase())
+    .maybeSingle();
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const contentType = request.headers.get("content-type") || "";
@@ -117,9 +258,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ cod
   } else if (body.action === "message") {
     const text = String(body.text || "").trim().slice(0, 4000);
     if (!text) return NextResponse.json({ error: "Message required" }, { status: 400 });
-    await auth.supabase!.from("project_messages").insert({ project_id: project.id, sender_type: "admin", sender_name: "ORTA Studio", message: text });
+
+    const { error: messageError } = await auth.supabase!
+      .from("project_messages")
+      .insert({ project_id: project.id, sender_type: "admin", sender_name: "ORTA Studio", message: text });
+    if (messageError) {
+      console.error("ADMIN_MESSAGE_INSERT_ERROR", { projectCode: project.project_code, error: messageError });
+      return NextResponse.json({ error: "Message could not be saved" }, { status: 500 });
+    }
+
     await auth.supabase!.from("projects").update({ last_activity_at: new Date().toISOString() }).eq("id", project.id);
-  } else return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
+    const notificationSent = await sendAdminMessageEmail(request, project, text);
+    return NextResponse.json({ ok: true, notificationSent });
+  } else {
+    return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
+  }
 
   return NextResponse.json({ ok: true });
 }
