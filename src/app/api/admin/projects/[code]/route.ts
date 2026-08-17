@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getAdminContext } from "@/lib/admin-context";
 import { demoProject, statusOrder, type ProjectStatus } from "@/lib/demo-data";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 function demoAdminProject() {
   return {
@@ -36,9 +37,32 @@ export async function GET(_request: Request, { params }: { params: Promise<{ cod
 
   const [{ data: messages }, { data: files }, { data: revisions }] = await Promise.all([
     auth.supabase!.from("project_messages").select("id,created_at,sender_name,sender_type,message").eq("project_id", row.id).order("created_at"),
-    auth.supabase!.from("project_files").select("id,created_at,original_name,mime_type,size_bytes").eq("project_id", row.id).order("created_at"),
+    auth.supabase!.from("project_files").select("id,created_at,storage_path,original_name,mime_type,size_bytes").eq("project_id", row.id).order("created_at"),
     auth.supabase!.from("revision_requests").select("id").eq("project_id", row.id).eq("status", "open").limit(1),
   ]);
+
+  const storageClient = getSupabaseAdmin() ?? auth.supabase!;
+  const fileRows = await Promise.all((files ?? []).map(async (item) => {
+    const { data, error } = await storageClient.storage
+      .from("project-files")
+      .createSignedUrl(item.storage_path, 900, { download: item.original_name });
+    if (error) {
+      console.error("ADMIN_FILE_SIGN_ERROR", {
+        projectCode: row.project_code,
+        fileId: item.id,
+        storagePath: item.storage_path,
+        error,
+      });
+    }
+    const date = new Date(item.created_at);
+    return {
+      id: item.id,
+      name: item.original_name,
+      date: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      meta: `${(item.mime_type || "FILE").split("/").pop()?.toUpperCase()} · ${item.size_bytes ? `${(item.size_bytes / 1024 / 1024).toFixed(1)} MB` : "—"}`,
+      downloadUrl: data?.signedUrl ?? null,
+    };
+  }));
 
   const project = {
     id: row.id,
@@ -59,10 +83,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ cod
       const date = new Date(item.created_at);
       return { id: item.id, date: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), time: date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }), author: item.sender_name || (item.sender_type === "admin" ? "ORTA Studio" : "Client"), text: item.message };
     }),
-    files: (files ?? []).map((item) => {
-      const date = new Date(item.created_at);
-      return { id: item.id, name: item.original_name, date: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), meta: `${(item.mime_type || "FILE").split("/").pop()?.toUpperCase()} · ${item.size_bytes ? `${(item.size_bytes / 1024 / 1024).toFixed(1)} MB` : "—"}` };
-    }),
+    files: fileRows,
     hasOpenRevision: Boolean(revisions?.length),
   };
   return NextResponse.json({ project });
