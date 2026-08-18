@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { demoProject } from "@/lib/demo-data";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -66,11 +66,43 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
 export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const resolved = await resolveProject(token);
-  const body = await request.json().catch(() => ({}));
 
   if (resolved.demo) return NextResponse.json({ ok: true, mode: "demo" });
   if (!resolved.project || !resolved.supabase) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("multipart/form-data")) {
+    const form = await request.formData();
+    const files = form.getAll("files").filter((item): item is File => item instanceof File && item.size > 0);
+    if (!files.length) return NextResponse.json({ error: "File required" }, { status: 400 });
+
+    for (const file of files) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+      const storagePath = `${resolved.project.id}/client/${randomUUID()}-${safeName}`;
+      const { error: uploadError } = await resolved.supabase.storage.from("project-files").upload(storagePath, file, { upsert: false });
+      if (uploadError) {
+        console.error("CUSTOMER_FILE_UPLOAD_ERROR", { projectCode: resolved.project.project_code, fileName: file.name, storagePath, error: uploadError });
+        return NextResponse.json({ error: "File could not be uploaded" }, { status: 500 });
+      }
+
+      const { error: insertError } = await resolved.supabase.from("project_files").insert({
+        project_id: resolved.project.id,
+        storage_path: storagePath,
+        original_name: file.name,
+        mime_type: file.type || null,
+        size_bytes: file.size,
+        uploaded_by: "client",
+      });
+      if (insertError) {
+        console.error("CUSTOMER_FILE_RECORD_ERROR", { projectCode: resolved.project.project_code, fileName: file.name, storagePath, error: insertError });
+        return NextResponse.json({ error: "File record could not be saved" }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  const body = await request.json().catch(() => ({}));
   if (body.action === "message") {
     const text = String(body.text || "").trim().slice(0, 4000);
     if (!text) return NextResponse.json({ error: "Message required" }, { status: 400 });
