@@ -16,11 +16,94 @@ function demoPayload() {
   };
 }
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[char] ?? char);
+}
+
+type ResolvedProject = {
+  id: string;
+  project_code: string;
+  company: string | null;
+  product_name: string;
+  status: string;
+};
+
+async function sendAdminActivityEmail(
+  request: Request,
+  project: ResolvedProject,
+  kind: "message" | "file" | "revision",
+  detail: string,
+) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const to = process.env.ORTA_NOTIFICATION_EMAIL;
+  if (!apiKey || !to) {
+    console.error("CUSTOMER_ACTIVITY_EMAIL_CONFIG_MISSING", {
+      hasApiKey: Boolean(apiKey),
+      hasRecipient: Boolean(to),
+    });
+    return false;
+  }
+
+  const labels = {
+    message: "New customer message",
+    file: "New customer file",
+    revision: "New revision request",
+  } as const;
+  const label = labels[kind];
+  const origin = new URL(request.url).origin;
+  const adminUrl = `${origin}/admin/projects/${encodeURIComponent(project.project_code.toLowerCase())}`;
+  const safeDetail = escapeHtml(detail).replace(/\n/g, "<br>");
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "User-Agent": "ORTA-Studio/1.0",
+    },
+    body: JSON.stringify({
+      from: "ORTA Studio <projects@mail.orta-studio.com>",
+      to: [to],
+      subject: `${label} — ${project.project_code}`,
+      html: `
+        <h2>${label}</h2>
+        <p><strong>Project:</strong> ${escapeHtml(project.project_code)}</p>
+        <p><strong>Product:</strong> ${escapeHtml(project.product_name)}</p>
+        <p><strong>Company:</strong> ${escapeHtml(project.company || "-")}</p>
+        <p>${safeDetail}</p>
+        <p><a href="${escapeHtml(adminUrl)}">Open Admin Project</a></p>
+      `,
+    }),
+  });
+
+  if (!response.ok) {
+    console.error("CUSTOMER_ACTIVITY_EMAIL_ERROR", {
+      projectCode: project.project_code,
+      kind,
+      status: response.status,
+      response: await response.text(),
+    });
+    return false;
+  }
+
+  return true;
+}
+
 async function resolveProject(token: string) {
   const supabase = getSupabaseAdmin();
   if (!supabase) return { supabase: null, project: null, demo: isDemoMode() };
   const tokenHash = createHash("sha256").update(token).digest("hex");
-  const { data: primaryProject } = await supabase.from("projects").select("id,project_code,company,product_name,status").eq("access_token_hash", tokenHash).maybeSingle();
+  const { data: primaryProject } = await supabase
+    .from("projects")
+    .select("id,project_code,company,product_name,status")
+    .eq("access_token_hash", tokenHash)
+    .maybeSingle();
   if (primaryProject) return { supabase, project: primaryProject, demo: false };
 
   const { data: accessToken } = await supabase
@@ -30,7 +113,11 @@ async function resolveProject(token: string) {
     .gt("expires_at", new Date().toISOString())
     .maybeSingle();
   if (!accessToken) return { supabase, project: null, demo: false };
-  const { data: project } = await supabase.from("projects").select("id,project_code,company,product_name,status").eq("id", accessToken.project_id).maybeSingle();
+  const { data: project } = await supabase
+    .from("projects")
+    .select("id,project_code,company,product_name,status")
+    .eq("id", accessToken.project_id)
+    .maybeSingle();
   return { supabase, project, demo: false };
 }
 
@@ -49,7 +136,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   const fileRows = await Promise.all((files ?? []).map(async (file) => {
     const { data } = await resolved.supabase!.storage.from("project-files").createSignedUrl(file.storage_path, 900);
     const date = new Date(file.created_at);
-    return { id: file.id, name: file.original_name, date: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), meta: `${(file.mime_type || "FILE").split("/").pop()?.toUpperCase()} · ${file.size_bytes ? `${(file.size_bytes / 1024 / 1024).toFixed(1)} MB` : "—"}`, downloadUrl: data?.signedUrl };
+    return {
+      id: file.id,
+      name: file.original_name,
+      date: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      meta: `${(file.mime_type || "FILE").split("/").pop()?.toUpperCase()} · ${file.size_bytes ? `${(file.size_bytes / 1024 / 1024).toFixed(1)} MB` : "—"}`,
+      downloadUrl: data?.signedUrl,
+    };
   }));
 
   return NextResponse.json({ project: {
@@ -58,7 +151,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
     company: resolved.project.company || "",
     status: resolved.project.status,
     hasOpenRevision: Boolean(revisions?.length),
-    messages: (messages ?? []).map((message) => { const date = new Date(message.created_at); return { id: message.id, date: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), time: date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }), author: message.sender_name || (message.sender_type === "admin" ? "ORTA Studio" : "Client"), text: message.message }; }),
+    messages: (messages ?? []).map((message) => {
+      const date = new Date(message.created_at);
+      return {
+        id: message.id,
+        date: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        time: date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
+        author: message.sender_name || (message.sender_type === "admin" ? "ORTA Studio" : "Client"),
+        text: message.message,
+      };
+    }),
     files: fileRows,
   } });
 }
@@ -76,6 +178,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     const files = form.getAll("files").filter((item): item is File => item instanceof File && item.size > 0);
     if (!files.length) return NextResponse.json({ error: "File required" }, { status: 400 });
 
+    const uploadedNames: string[] = [];
     for (const file of files) {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
       const storagePath = `${resolved.project.id}/client/${randomUUID()}-${safeName}`;
@@ -97,20 +200,42 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
         console.error("CUSTOMER_FILE_RECORD_ERROR", { projectCode: resolved.project.project_code, fileName: file.name, storagePath, error: insertError });
         return NextResponse.json({ error: "File record could not be saved" }, { status: 500 });
       }
+      uploadedNames.push(file.name);
     }
 
-    return NextResponse.json({ ok: true });
+    const notificationSent = await sendAdminActivityEmail(
+      request,
+      resolved.project,
+      "file",
+      `Customer uploaded: ${uploadedNames.join(", ")}`,
+    );
+    return NextResponse.json({ ok: true, notificationSent });
   }
 
   const body = await request.json().catch(() => ({}));
   if (body.action === "message") {
     const text = String(body.text || "").trim().slice(0, 4000);
     if (!text) return NextResponse.json({ error: "Message required" }, { status: 400 });
-    await resolved.supabase.from("project_messages").insert({ project_id: resolved.project.id, sender_type: "client", sender_name: "Client", message: text });
+    const { error } = await resolved.supabase.from("project_messages").insert({
+      project_id: resolved.project.id,
+      sender_type: "client",
+      sender_name: "Client",
+      message: text,
+    });
+    if (error) return NextResponse.json({ error: "Message could not be saved" }, { status: 500 });
+    const notificationSent = await sendAdminActivityEmail(request, resolved.project, "message", text);
+    return NextResponse.json({ ok: true, notificationSent });
   } else if (body.action === "revision") {
     const text = String(body.text || "").trim().slice(0, 6000);
     if (!text) return NextResponse.json({ error: "Revision required" }, { status: 400 });
-    await resolved.supabase.from("revision_requests").insert({ project_id: resolved.project.id, request_text: text, status: "open" });
+    const { error } = await resolved.supabase.from("revision_requests").insert({
+      project_id: resolved.project.id,
+      request_text: text,
+      status: "open",
+    });
+    if (error) return NextResponse.json({ error: "Revision could not be saved" }, { status: 500 });
+    const notificationSent = await sendAdminActivityEmail(request, resolved.project, "revision", text);
+    return NextResponse.json({ ok: true, notificationSent });
   } else if (body.action === "final_approval") {
     if (resolved.project.status !== "Waiting for Client") return NextResponse.json({ error: "Project is not ready for final approval" }, { status: 409 });
     await resolved.supabase.from("final_approvals").insert({ project_id: resolved.project.id });
