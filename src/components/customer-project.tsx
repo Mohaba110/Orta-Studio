@@ -1,6 +1,6 @@
 "use client";
 
-import { Check } from "@phosphor-icons/react";
+import { Check, UploadSimple } from "@phosphor-icons/react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { statusOrder, type ProjectStatus } from "@/lib/demo-data";
 import { SiteFooter } from "./site-footer";
@@ -20,12 +20,17 @@ export function CustomerProject({ token }: { token: string }) {
   const [notice, setNotice] = useState("");
   const messageInput = useRef<HTMLInputElement>(null);
   const revisionInput = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  async function reloadProject() {
+    const response = await fetch(`/api/projects/${encodeURIComponent(token)}`);
+    if (!response.ok) throw new Error("Unable to load project");
+    const data = await response.json();
+    setProject(data.project);
+  }
 
   useEffect(() => {
-    fetch(`/api/projects/${encodeURIComponent(token)}`)
-      .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((data) => setProject(data.project))
-      .catch(() => setNotice(pick("This secure project link is invalid or has expired.", "Bu güvenli proje bağlantısı geçersiz veya süresi dolmuş.")));
+    reloadProject().catch(() => setNotice(pick("This secure project link is invalid or has expired.", "Bu güvenli proje bağlantısı geçersiz veya süresi dolmuş.")));
   }, [token, pick]);
 
   const currentIndex = useMemo(() => project ? statusOrder.indexOf(project.status) : -1, [project]);
@@ -39,6 +44,17 @@ export function CustomerProject({ token }: { token: string }) {
     const newMessage: Message = { id: localId, date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), time: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }), author: "Client", text };
     setProject({ ...project, messages: [...project.messages, newMessage] });
     setMessage("");
+  }
+
+  async function uploadFiles(files: FileList | null) {
+    if (!files?.length) return;
+    const form = new FormData();
+    Array.from(files).forEach((file) => form.append("files", file));
+    const response = await fetch(`/api/projects/${encodeURIComponent(token)}`, { method: "POST", body: form });
+    if (!response.ok) return setNotice(pick("File could not be uploaded.", "Dosya yüklenemedi."));
+    await reloadProject();
+    if (fileInput.current) fileInput.current.value = "";
+    setNotice(pick("File uploaded successfully.", "Dosya başarıyla yüklendi."));
   }
 
   async function sendRevision() {
@@ -103,6 +119,8 @@ export function CustomerProject({ token }: { token: string }) {
               <ul className="file-list">
                 {project.files.map((file) => <li className="file-row" key={file.id}><a href={file.downloadUrl || `data:text/plain;charset=utf-8,ORTA%20Studio%20demo%20file`} download={file.name}>{file.name}</a><span>{file.date}</span><span>{file.meta}</span></li>)}
               </ul>
+              <input ref={fileInput} hidden multiple type="file" onChange={(event) => void uploadFiles(event.target.files)} />
+              <button className="button" type="button" style={{ marginTop: 14 }} onClick={() => fileInput.current?.click()}><UploadSimple size={18} />{pick("Upload File", "Dosya Yükle")}</button>
             </section>
 
             <section className="detail-section">
