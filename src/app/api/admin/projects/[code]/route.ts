@@ -139,7 +139,7 @@ async function sendAdminMessageEmail(request: Request, project: AdminMessageProj
       "User-Agent": "ORTA-Studio/1.0",
     },
     body: JSON.stringify({
-      from: "ORTA Studio <onboarding@resend.dev>",
+      from: "ORTA Studio <projects@mail.orta-studio.com>",
       to: [project.email],
       subject,
       html: `
