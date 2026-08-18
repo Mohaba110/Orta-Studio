@@ -1,5 +1,6 @@
 import "@fontsource-variable/manrope";
 import "./globals.css";
+import "./brand-theme.css";
 
 import type { Metadata } from "next";
 import { LocaleProvider } from "@/components/locale-provider";
