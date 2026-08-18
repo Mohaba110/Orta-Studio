@@ -254,7 +254,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ cod
   const body = await request.json().catch(() => ({}));
   if (body.action === "status") {
     if (!statusOrder.includes(body.status)) return NextResponse.json({ error: "Invalid status" }, { status: 400 });
-    await auth.supabase!.from("projects").update({ status: body.status, last_activity_at: new Date().toISOString() }).eq("id", project.id);
+
+    const admin = getSupabaseAdmin();
+    if (!admin) return NextResponse.json({ error: "Project status service unavailable" }, { status: 503 });
+
+    const { error: statusError } = await admin
+      .from("projects")
+      .update({ status: body.status, last_activity_at: new Date().toISOString() })
+      .eq("id", project.id);
+
+    if (statusError) {
+      console.error("ADMIN_STATUS_UPDATE_ERROR", {
+        projectCode: project.project_code,
+        status: body.status,
+        error: statusError,
+      });
+      return NextResponse.json({ error: "Status could not be updated" }, { status: 500 });
+    }
   } else if (body.action === "message") {
     const text = String(body.text || "").trim().slice(0, 4000);
     if (!text) return NextResponse.json({ error: "Message required" }, { status: 400 });
