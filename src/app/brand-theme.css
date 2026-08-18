@@ -1,11 +1,13 @@
 :root {
   --ink: #111111;
-  --orange: #30f9ff;
+  --orange: #19d9df;
   --muted: #5f5f5f;
   --soft: #f4f4f2;
   --paper: #ffffff;
   --orta-cyan: #30f9ff;
+  --orta-cyan-ui: #19d9df;
   --orta-lime: #a2ff45;
+  --orta-lime-deep: #5f9f22;
 }
 
 /* ORTA brand system: restrained industrial base with controlled accents. */
@@ -29,14 +31,14 @@
 
 .button--ghost-orange:hover {
   color: var(--ink);
-  border-color: var(--orta-cyan);
-  background: var(--orta-cyan);
+  border-color: var(--orta-cyan-ui);
+  background: var(--orta-cyan-ui);
 }
 
 .site-nav a.is-active::after,
 .orange-rule,
 .why-list li::before {
-  background: var(--orta-cyan);
+  background: var(--orta-cyan-ui);
 }
 
 .language-toggle button.is-active,
@@ -47,31 +49,74 @@
 .service-mini svg,
 .service-item svg,
 .cta-strip__title svg {
-  color: var(--orta-cyan);
+  color: var(--orta-cyan-ui);
 }
 
 .choice-button.is-active {
-  border-color: var(--orta-cyan);
+  border-color: var(--orta-cyan-ui);
   color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--orta-cyan);
+  box-shadow: inset 0 0 0 1px var(--orta-cyan-ui);
 }
 
 .form-message {
   background: var(--soft);
-  border-left-color: var(--orta-cyan);
+  border-left-color: var(--orta-cyan-ui);
 }
 
 .status-pill.is-orange {
   color: var(--ink);
-  border-color: var(--orta-cyan);
-  box-shadow: inset 3px 0 0 var(--orta-cyan);
+  border-color: var(--orta-cyan-ui);
+  box-shadow: inset 3px 0 0 var(--orta-cyan-ui);
+}
+
+/* Header wordmark: simplified, horizontal and more industrial than the master logo. */
+.brand-wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  line-height: 1;
+  letter-spacing: -.045em;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.brand-wordmark__orta,
+.brand-wordmark__studio {
+  display: inline-block;
+  padding: 5px 7px 6px;
+  border: 2px solid var(--ink);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.brand-wordmark__orta {
+  background: var(--orta-lime);
+}
+
+.brand-wordmark__studio {
+  background: var(--orta-cyan);
+}
+
+.brand-descriptor {
+  border-left-color: #bdbdbd !important;
+  color: #4f4f4f !important;
+}
+
+.brand-lockup--compact .brand-wordmark {
+  gap: 6px;
+}
+
+.brand-lockup--compact .brand-wordmark__orta,
+.brand-lockup--compact .brand-wordmark__studio {
+  padding: 4px 6px 5px;
+  box-shadow: 2px 2px 0 var(--ink);
 }
 
 /* Lime is reserved for workflow progress rather than general decoration. */
 .status-step.is-done .status-node,
 .status-step.is-current .status-node {
   background: var(--orta-lime);
-  border-color: var(--orta-lime);
+  border-color: var(--orta-lime-deep);
   color: var(--ink);
 }
 
@@ -85,7 +130,7 @@
 }
 
 .status-step.is-current .status-node {
-  border-color: var(--orta-lime);
+  border-color: var(--orta-lime-deep);
   box-shadow: inset 0 0 0 7px #ffffff;
 }
 
@@ -95,9 +140,15 @@
   border-top-color: var(--ink);
 }
 
-.site-footer .brand-lockup span {
-  color: #d8d8d8;
-  border-left-color: #4a4a4a;
+.site-footer .brand-wordmark__orta,
+.site-footer .brand-wordmark__studio {
+  border-color: #ffffff;
+  box-shadow: 3px 3px 0 #ffffff;
+}
+
+.site-footer .brand-descriptor {
+  color: #d8d8d8 !important;
+  border-left-color: #4a4a4a !important;
 }
 
 .site-footer .language-toggle button {
@@ -109,5 +160,19 @@
 }
 
 .site-footer a:hover {
-  color: var(--orta-cyan);
+  color: var(--orta-cyan-ui);
+}
+
+@media (max-width: 760px) {
+  .brand-wordmark {
+    gap: 5px;
+    letter-spacing: -.04em;
+  }
+
+  .brand-wordmark__orta,
+  .brand-wordmark__studio {
+    padding: 4px 5px;
+    border-width: 1.5px;
+    box-shadow: 2px 2px 0 var(--ink);
+  }
 }
