@@ -1,5 +1,6 @@
 import "@fontsource-variable/manrope";
 import "@/app/globals.css";
+import "@/app/brand-theme.css";
 import type { AppProps } from "next/app";
 import Head from "next/head";
 import { LocaleProvider } from "@/components/locale-provider";
