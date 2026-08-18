@@ -163,6 +163,59 @@ async function sendAdminMessageEmail(request: Request, project: AdminMessageProj
   return true;
 }
 
+async function sendStatusEmail(request: Request, project: AdminMessageProject, status: ProjectStatus) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.error("ADMIN_STATUS_EMAIL_CONFIG_MISSING", { hasApiKey: false });
+    return false;
+  }
+
+  const token = await getPermanentProjectToken(project);
+  if (!token) return false;
+
+  const origin = new URL(request.url).origin;
+  const projectUrl = `${origin}/project/${encodeURIComponent(token)}`;
+  const isTurkish = project.preferred_language === "Türkçe";
+  const subject = isTurkish
+    ? `Proje durumu güncellendi — ${project.project_code}`
+    : `Project status updated — ${project.project_code}`;
+  const heading = isTurkish ? "Projenizin durumu güncellendi" : "Your project status has been updated";
+  const statusLabel = isTurkish ? "Yeni durum" : "New status";
+  const button = isTurkish ? "Projeyi Aç" : "Open Project";
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "User-Agent": "ORTA-Studio/1.0",
+    },
+    body: JSON.stringify({
+      from: "ORTA Studio <projects@mail.orta-studio.com>",
+      to: [project.email],
+      subject,
+      html: `
+        <h2>${heading}</h2>
+        <p><strong>${escapeHtml(project.project_code)}</strong></p>
+        <p>${statusLabel}: <strong>${escapeHtml(status)}</strong></p>
+        <p><a href="${escapeHtml(projectUrl)}">${button}</a></p>
+      `,
+    }),
+  });
+
+  if (!response.ok) {
+    console.error("ADMIN_STATUS_EMAIL_ERROR", {
+      projectCode: project.project_code,
+      status,
+      responseStatus: response.status,
+      response: await response.text(),
+    });
+    return false;
+  }
+
+  return true;
+}
+
 export async function GET(_request: Request, { params }: { params: Promise<{ code: string }> }) {
   const auth = await getAdminContext();
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -271,6 +324,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ cod
       });
       return NextResponse.json({ error: "Status could not be updated" }, { status: 500 });
     }
+
+    const notificationSent = await sendStatusEmail(request, project, body.status as ProjectStatus);
+    return NextResponse.json({ ok: true, notificationSent });
   } else if (body.action === "message") {
     const text = String(body.text || "").trim().slice(0, 4000);
     if (!text) return NextResponse.json({ error: "Message required" }, { status: 400 });
