@@ -32,6 +32,11 @@ img { display: block; max-width: 100%; }
 .site-header { background: rgba(255,255,255,.97); border-bottom: 1px solid transparent; position: relative; z-index: 20; }
 .site-header__inner { height: 118px; display: grid; grid-template-columns: minmax(300px, 1fr) auto auto; align-items: center; gap: 44px; }
 .brand-lockup { display: inline-flex; align-items: center; gap: 28px; width: max-content; }
+.brand-logo {
+  width: 220px;
+  height: auto;
+  display: block;
+}
 .brand-lockup strong { font-size: 35px; line-height: .96; letter-spacing: -.05em; font-weight: 790; }
 .brand-lockup span { padding-left: 28px; border-left: 1px solid #cfcfcf; color: #525252; font-size: 16px; line-height: 1.25; font-weight: 480; }
 .brand-lockup--compact strong { font-size: 29px; }
