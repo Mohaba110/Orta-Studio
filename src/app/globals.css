@@ -1,11 +1,13 @@
-:root {
-  --ink: #111111;
-  --orange: #ff7a00;
-  --muted: #6b6b6b;
-  --soft: #f2f2f2;
-  --line: #dedede;
-  --paper: #ffffff;
-  --shell: 1360px;
+:root { 
+  --ink: #111111; 
+  --orange: #00D9E8; 
+  --muted: #6B6B6B; 
+  --soft: #F2F2F2; 
+  --line: #DEDEDE; 
+  --paper: #FFFFFF; 
+  --lime: #A8FF2A;
+  --cyan: #00D9E8;
+  --shell: 1360px; 
 }
 
 * { box-sizing: border-box; }
