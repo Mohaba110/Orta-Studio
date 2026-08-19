@@ -35,14 +35,17 @@ img { display: block; max-width: 100%; }
 .site-header__inner { height: 118px; display: grid; grid-template-columns: minmax(300px, 1fr) auto auto; align-items: center; gap: 44px; }
 .brand-lockup { display: inline-flex; align-items: center; gap: 28px; width: max-content; }
 .brand-logo {
-  width: 220px;
+  width: 240px;
   height: auto;
   display: block;
+  object-fit: contain;
 }
+/*
 .brand-lockup strong { font-size: 35px; line-height: .96; letter-spacing: -.05em; font-weight: 790; }
 .brand-lockup span { padding-left: 28px; border-left: 1px solid #cfcfcf; color: #525252; font-size: 16px; line-height: 1.25; font-weight: 480; }
 .brand-lockup--compact strong { font-size: 29px; }
 .brand-lockup--compact span { font-size: 13px; }
+*/
 .site-nav { display: flex; align-items: stretch; gap: 46px; height: 100%; }
 .site-nav a { position: relative; display: grid; place-items: center; font-size: 14px; font-weight: 650; white-space: nowrap; }
 .site-nav a.is-active::after { content: ""; position: absolute; bottom: 28px; left: 0; right: 0; height: 2px; background: var(--orange); }
