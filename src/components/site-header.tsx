@@ -16,10 +16,11 @@ const nav = [
 export function BrandLockup({ compact = false }: { compact?: boolean }) {
   return (
     <Link className={`brand-lockup ${compact ? "brand-lockup--compact" : ""}`} href="/" aria-label="ORTA Studio home">
-      <strong className="brand-wordmark" aria-hidden="true">
-        <span className="brand-wordmark__orta">ORTA</span>
-        <span className="brand-wordmark__studio">STUDIO</span>
-      </strong>
+      <img
+  src="/images/orta-header-logo.png"
+  alt="ORTA Studio"
+  className="brand-logo"
+/>
       <span className="brand-descriptor">Industrial Packaging<br />&amp; Graphic Design</span>
     </Link>
   );
