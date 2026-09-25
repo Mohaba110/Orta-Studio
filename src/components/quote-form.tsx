@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { createClient } from "@supabase/supabase-js";
 import { ArrowRight, UploadSimple } from "@phosphor-icons/react";
 import { FormEvent, useRef, useState } from "react";
 import { useLocale } from "./locale-provider";
@@ -9,8 +10,28 @@ const serviceOptions = ["Packaging Design", "Label Design", "Industrial Sack Des
 const industryOptions = ["Food & Beverage", "Ingredients", "Bakery & Confectionery", "Supplements", "Cosmetics", "Industrial", "Other"];
 const countryOptions = ["Türkiye", "Germany", "Iran", "Iraq", "United Kingdom", "United States", "Other"];
 const deliveryOptions = ["Standard", "Priority", "Flexible"] as const;
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 type Submission = { projectId: string; securePath: string } | null;
+type UploadInstruction = { path: string; token: string };
+type QuoteResponse = {
+  error?: string;
+  projectId?: string;
+  securePath?: string;
+  completionToken?: string;
+  uploads?: UploadInstruction[];
+  mode?: string;
+};
+
+async function readJsonResponse(response: Response): Promise<QuoteResponse> {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text) as QuoteResponse;
+  } catch {
+    throw new Error(response.ok ? "Invalid server response." : `Request failed (${response.status}).`);
+  }
+}
 
 export function QuoteForm() {
   const { pick } = useLocale();
@@ -23,17 +44,92 @@ export function QuoteForm() {
   const [error, setError] = useState("");
   const [submission, setSubmission] = useState<Submission>(null);
 
+  function acceptFiles(nextFiles: File[]) {
+    const oversized = nextFiles.find((file) => file.size > MAX_FILE_SIZE_BYTES);
+    if (oversized) {
+      setFiles([]);
+      if (fileInput.current) fileInput.current.value = "";
+      setError(pick(`Each file must be 5 MB or smaller. ${oversized.name} is too large.`, `Her dosya en fazla 5 MB olabilir. ${oversized.name} çok büyük.`));
+      return;
+    }
+    setError("");
+    setFiles(nextFiles);
+  }
+
   async function submitForm(formElement: HTMLFormElement) {
+    const oversized = files.find((file) => file.size > MAX_FILE_SIZE_BYTES);
+    if (oversized) {
+      setError(pick(`Each file must be 5 MB or smaller. ${oversized.name} is too large.`, `Her dosya en fazla 5 MB olabilir. ${oversized.name} çok büyük.`));
+      return;
+    }
+
     setLoading(true);
     setError("");
     const form = new FormData(formElement);
-    form.set("preferredLanguage", language);
-    form.set("preferredDelivery", delivery);
-    files.forEach((file) => form.append("files", file));
+    const requestBody = {
+      name: String(form.get("name") ?? ""),
+      company: String(form.get("company") ?? ""),
+      email: String(form.get("email") ?? ""),
+      whatsapp: String(form.get("whatsapp") ?? ""),
+      country: String(form.get("country") ?? ""),
+      preferredLanguage: language,
+      service: String(form.get("service") ?? ""),
+      industry: String(form.get("industry") ?? ""),
+      productName: String(form.get("productName") ?? ""),
+      description: String(form.get("description") ?? ""),
+      preferredDelivery: delivery,
+      files: files.map((file) => ({ name: file.name, type: file.type, size: file.size })),
+    };
+
     try {
-      const response = await fetch("/api/quote", { method: "POST", body: form });
-      const payload = await response.json();
+      const response = await fetch("/api/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const payload = await readJsonResponse(response);
       if (!response.ok) throw new Error(payload.error || "Unable to submit the request.");
+      if (!payload.projectId || !payload.securePath) throw new Error("Invalid server response.");
+
+      if (files.length && payload.mode !== "demo") {
+        if (!payload.completionToken || payload.uploads?.length !== files.length) {
+          throw new Error("Upload could not be prepared.");
+        }
+
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+        if (!supabaseUrl || !supabaseKey) throw new Error("File upload is temporarily unavailable.");
+        const supabase = createClient(supabaseUrl, supabaseKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+
+        const uploadedFiles = [];
+        for (let index = 0; index < files.length; index += 1) {
+          const file = files[index];
+          const upload = payload.uploads[index];
+          const { error: uploadError } = await supabase.storage
+            .from("project-files")
+            .uploadToSignedUrl(upload.path, upload.token, file, {
+              contentType: file.type || undefined,
+            });
+          if (uploadError) throw new Error(`Unable to upload ${file.name}.`);
+          uploadedFiles.push({
+            path: upload.path,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+          });
+        }
+
+        const completeResponse = await fetch("/api/quote", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ completionToken: payload.completionToken, files: uploadedFiles }),
+        });
+        const completePayload = await readJsonResponse(completeResponse);
+        if (!completeResponse.ok) throw new Error(completePayload.error || "Uploaded files could not be saved.");
+      }
+
       setSubmission({ projectId: payload.projectId, securePath: payload.securePath });
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to submit the request.");
@@ -103,7 +199,7 @@ export function QuoteForm() {
       <div style={{ display: "grid", gap: 32 }}>
         <div className="field">
           <span className="fieldset-label">{pick("Upload files", "Dosya yükle")}</span>
-          <input ref={fileInput} hidden type="file" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} />
+          <input ref={fileInput} hidden type="file" multiple onChange={(event) => acceptFiles(Array.from(event.target.files ?? []))} />
           <button
             className="dropzone"
             type="button"
@@ -111,11 +207,12 @@ export function QuoteForm() {
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
-              setFiles(Array.from(event.dataTransfer.files));
+              acceptFiles(Array.from(event.dataTransfer.files));
             }}
           >
             <span><UploadSimple size={22} style={{ margin: "0 auto 10px" }} />{files.length ? `${files.length} ${pick("file(s) selected", "dosya seçildi")}` : pick("Choose files or drag them here", "Dosyaları seçin veya buraya sürükleyin")}</span>
           </button>
+          <span className="optional">{pick("Maximum 5 MB per file", "Dosya başına en fazla 5 MB")}</span>
         </div>
         <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
           <legend className="fieldset-label">{pick("Preferred delivery", "Teslimat tercihi")}</legend>
